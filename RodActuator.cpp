@@ -1,170 +1,133 @@
 #include <Arduino.h>
 #include "RodActuator.h"
 
-RodActuator::RodActuator(uint8_t ENA, uint8_t ENB, uint8_t IN1, uint8_t IN2, volatile long &angPosition, void (*interruptHandler)()) :
-  _ENA(ENA), _ENB(ENB), _IN1(IN1), _IN2(IN2), _angPosition(angPosition)
-{
-  pinMode(_ENA, INPUT);
-  pinMode(_ENB, INPUT);
-  pinMode(_IN1, OUTPUT);
-  pinMode(_IN2, OUTPUT);
+#define DEBUG false
 
-  attachInterrupt(digitalPinToInterrupt(_ENA), interruptHandler, CHANGE);
+RodActuator::RodActuator(uint8_t ENA, uint8_t ENB, uint8_t IN1, uint8_t IN2, volatile long &angPosition, void (*interruptHandler)()) :
+  ENA(ENA), ENB(ENB), IN1(IN1), IN2(IN2), angPosition(angPosition)
+{
+  pinMode(ENA, INPUT);
+  pinMode(ENB, INPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  attachInterrupt(digitalPinToInterrupt(ENA), interruptHandler, CHANGE);
 
   // Calculate position factor
-  positionFactor = R * 2.0*PI / (ticksRev * gearRatio); 
+  // 1 Revolución en el encoder son 7 cambios
+  // La relación de engranages de 235:1
+  // El valor de _position está en revoluciones
+  // 1/(7*235) = 6.0790273556231e-4
+  positionFactor = 2.0 * R * PI / (ticksRev * gearRatio);
 
   // Inicializar control PID
-  _outputSpan = _outputMax - _outputMin;
-  _PID = QuickPID(&_position, &_angVelocity, &_desiredPosition);
-  _PID.SetSampleTimeUs(_outputSpan * 1000 - 1);
-  _PID.SetOutputLimits(_outputMin, _outputMax);
-  _PID.SetDerivativeMode(QuickPID::dMode::dOnError);
-  _PID.SetProportionalMode(QuickPID::pMode::pOnErrorMeas);
-  _PID.SetAntiWindupMode(QuickPID::iAwMode::iAwCondition);
-  _PID.SetMode(QuickPID::Control::automatic);
+  PID = QuickPID(&position, &angVelocity, &desiredPosition);
+  PID.SetOutputLimits(outputMin, outputMax);
+  //PID.SetDerivativeMode(QuickPID::dMode::dOnError);
+  //PID.SetProportionalMode(QuickPID::pMode::pOnError);
+  //PID.SetAntiWindupMode(QuickPID::iAwMode::iAwCondition);
+  PID.SetMode(QuickPID::Control::automatic);
 }
 
 void RodActuator::Update() {
   updatePosition();
-  // updateVelocity();
-  if (_toTune) {
-    updateTuner();
-  } else {
-    _PID.Compute();
-  }
-  if (_toMove) {
+
+  if (move) {
+    PID.Compute();
     updateVelocity();
-    if (isStable(1) && !_next) {
-      _next = true;
-    }
-    if (_angVelocity == 0.0 && _lastAngvelocity == 0.0) {
-       _toMove = false;
-       _next = true;
+  }
+
+  lastPosition = position;
+  lastAngvelocity = angVelocity;
+
+  if (!next && move) {
+    unsigned long currentTime = millis(); 
+    if (currentTime - timer > timeout) {
+      next = true;
     }
   }
-  _lastPosition = _position;
-  _lastAngvelocity = _angVelocity;
-  //if (!_next) {
-  //  _timer++;
-  //}
-  //if (_timer>_timeout) {
-  //  _next = true;
-  //  _timer = 0;
-  //}
 }
 
 void RodActuator::Stop() {
-  _angVelocity = 0;
-  _toMove = false;
+  angVelocity = 0;
+  next = true;
+  move = false;
   updateVelocity();
   updatePosition();
 }
 
-void RodActuator::AutoTune() {
-  _toTune = true;
-  
-  int positionLimit = 2000;
-  const float inputSpan = 1000;
-  const float outputStart = 0;
-  const float outputStep = _outputMax;
-  uint32_t testTimeSec = 5;
-  uint32_t settleTimeSec = 1;
-  const uint16_t samples = 500;
-
-  _next = false;
-  _tuner.Configure(inputSpan, _outputSpan, outputStart, outputStep, testTimeSec, settleTimeSec, samples);
-  _tuner.SetEmergencyStop(positionLimit);
-}
 
 void RodActuator::Move(float desiredPosition) {
-  _toMove = true;
-  _next = false;
-  _desiredPosition = desiredPosition;
-  //_PID.SetSetpoint(&desiredPosition);
+  next = false;
+  timer = millis();
+  move = true;
+  RodActuator::desiredPosition = desiredPosition;
 }
 
 float RodActuator::GetPosition() {
-  return _position;
+  return position;
 }
 
 
 void RodActuator::SetPIDConstants(float Kp, float Ki, float Kd) {
-  _Kp = Kp;
-  _Ki = Ki;
-  _Kd = Kd;
-  _PID.SetTunings(Kp, Ki, Kd);
-}
-
-
-void RodActuator::GetPIDConstants(float &Kp, float &Ki, float &Kd) {
-  Kp = _Kp;
-  Ki = _Ki;
-  Kd = _Kd;
+  Kp = Kp;
+  Ki = Ki;
+  Kd = Kd;
+  PID.SetTunings(Kp, Ki, Kd);
 }
 
 bool RodActuator::Next() {
-  return _next;
+  return next;
 }
 
 void RodActuator::SetSpeed(uint8_t speed) {
-  _speed = speed;
+  RodActuator::speed = speed;
+}
+
+void RodActuator::SetTimeout(float timeout) {
+  RodActuator::timeout = timeout;
+}
+
+int RodActuator::GetTimeout() {
+  return timeout;
 }
 
 // =========================================
 // Private methods
 // =========================================
 bool RodActuator::isStable(float threshold=1) {
-  return abs(_position - _desiredPosition) <= threshold;
+  return abs(position - desiredPosition) <= threshold;
 }
 
 void RodActuator::updateVelocity() {
   uint8_t vel1 = 0;
   uint8_t vel2 = 0;
-  uint8_t minPWM = 200;
-  if (_angVelocity > 0.1) {
+  float minInput = 0.5;
+  uint8_t minPWM = 50;
+  if (angVelocity >= minInput) {
     //vel1 = abs((float)_angVelocity / (float)_outputMax) * (float)_speed;
-    vel1 = map(abs(_angVelocity), 0.1, _outputMax, minPWM, _speed);
+    vel1 = map(abs(angVelocity), minInput, outputMax, minPWM, RodActuator::speed);
     
   }
-  else if (_angVelocity < -0.1) {
+  else if (angVelocity <= -minInput) {
     // vel2 = abs((float)_angVelocity / (float)_outputMax) * (float)_speed;
-    vel2 = map(abs(_angVelocity), 0.1, _outputMax, minPWM, _speed);
+    vel2 = map(abs(angVelocity), minInput, outputMax, minPWM, RodActuator::speed);
   }
-  if (_toTune || _toMove) {
+  if (DEBUG && (move && !next)) {
     Serial.print("Velocity: ");
-    Serial.print(_angVelocity);
+    Serial.print(angVelocity);
     Serial.print(" ");
     Serial.print(vel1);
     Serial.print(" ");
     Serial.print(vel2);
     Serial.print("  Position: ");
-    Serial.print(_position);
+    Serial.print(position);
     Serial.println();
   }
-  analogWrite(_IN1, vel1);
-  analogWrite(_IN2, vel2);
+  analogWrite(IN1, vel1);
+  analogWrite(IN2, vel2);
 }
 
 void RodActuator::updatePosition() {
-  // 1 Revolución en el encoder son 7 cambios
-  // La relación de engranages de 235:1
-  // El valor de _position está en revoluciones
-  // 1/(7*235) = 6.0790273556231e-4
-  _position = (int)(_angPosition * positionFactor);
-}
-
-void RodActuator::updateTuner() {
-  switch (_tuner.Run()) {
-    case _tuner.sample: // active once per sample during tuning
-      updateVelocity();
-      break;
-    case _tuner.tunings: // active just once per sample during test
-      _toTune = false;
-      _tuner.GetAutoTunings(&_Kp, &_Ki, &_Kd);
-      _PID.SetTunings(_Kp, _Ki, _Kd);
-      Stop();
-      _next = true;
-      break;
-  }
+  position = angPosition * positionFactor;
 }

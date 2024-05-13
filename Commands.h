@@ -78,7 +78,6 @@ void cmdStartAutoTuning(SerialCommands* sender) {
     Serial.print("Starting auto tuning in actuator ");
     Serial.println(id);
     RodActuator* actuator = getActuatorByName(id);
-    actuator->AutoTune();
   }
 }
 
@@ -135,6 +134,7 @@ void cmdDelay(SerialCommands* sender) {
 void cmdGetGCodes(SerialCommands* sender) {
   sendingCommand = true;
 
+  sender->GetSerial()->println("G: Show this help");
   sender->GetSerial()->println("G1: Move actuator");
   sender->GetSerial()->println("G4: Pause robot by a determined P<time>");
 }
@@ -142,9 +142,37 @@ void cmdGetGCodes(SerialCommands* sender) {
 void cmdGetMCodes(SerialCommands* sender) {
   sendingCommand = true;
 
+  sender->GetSerial()->println("M: Show this help");
+  sender->GetSerial()->println("M00: Stop actuators");
+  sender->GetSerial()->println("M85: Set command timeout with P<milliseconds> or S<seconds>");
   sender->GetSerial()->println("M114: Report actual position of actuators");
   sender->GetSerial()->println("M301: Set PID constants with P<value> I<value> D<value>");
   sender->GetSerial()->println("M303: Starts autotuning");
+}
+
+void cmdSetTimeout(SerialCommands* sender) {
+  sendingCommand = true;
+  float maximumTimeout = 60e3;
+  float timeout = 5000;
+  char *arg = sender->Next();
+  if (arg != NULL) {
+    char parameter = arg[0];
+    float value = atof(arg + 1);
+    if (parameter == 'P') {
+      timeout = value;
+    } else if (parameter == 'S') {
+      timeout = value * 1000;
+    }
+    if (timeout > maximumTimeout)
+      timeout = maximumTimeout;
+    for (NamedActuator actuator : namedActuators) {
+      actuator.object->SetTimeout(timeout);
+    }
+  } else {
+    timeout = namedActuators[0].object->GetTimeout();
+  }
+  sender->GetSerial()->print("Timeout: ");
+  sender->GetSerial()->println(timeout);
 }
 
 
@@ -156,6 +184,7 @@ SerialCommand G1("G1", &cmdMoveActuator);
 // M-Code Definitions
 SerialCommand MHelp("M", &cmdGetMCodes);
 SerialCommand M00("M00", &cmdStop);
+SerialCommand M85("M85", &cmdSetTimeout);
 SerialCommand M114("M114", &cmdGetActuatorPositions);
 SerialCommand M303("M303", &cmdStartAutoTuning);
 SerialCommand M301("M301", &cmdSetPIDConstants);

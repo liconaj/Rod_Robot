@@ -4,7 +4,6 @@ import time
 EOC = "!EOC"
 
 arduino = serial.Serial(port="COM3", baudrate=250000, timeout=.1)
-# time.sleep(1)
 
 print("\nRodRobot Serial Communication\n")
 
