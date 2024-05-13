@@ -1,12 +1,9 @@
 #include <Arduino.h>
 #include "RodActuator.h"
 
-RodActuator::RodActuator(uint8_t ENA, uint8_t ENB, uint8_t IN1, uint8_t IN2, volatile long &angPosition, void (*interruptHandler)()) : _angPosition(angPosition) {
-  _ENA = ENA;
-  _ENB = ENB;
-  _IN1 = IN1;
-  _IN2 = IN2;
-
+RodActuator::RodActuator(uint8_t ENA, uint8_t ENB, uint8_t IN1, uint8_t IN2, volatile long &angPosition, void (*interruptHandler)()) :
+  _ENA(ENA), _ENB(ENB), _IN1(IN1), _IN2(IN2), _angPosition(angPosition)
+{
   pinMode(_ENA, INPUT);
   pinMode(_ENB, INPUT);
   pinMode(_IN1, OUTPUT);
@@ -19,7 +16,7 @@ RodActuator::RodActuator(uint8_t ENA, uint8_t ENB, uint8_t IN1, uint8_t IN2, vol
 
   // Inicializar control PID
   _outputSpan = _outputMax - _outputMin;
-  _PID = QuickPID(&_position, &_angVelocity, _desiredPosition);
+  _PID = QuickPID(&_position, &_angVelocity, &_desiredPosition);
   _PID.SetSampleTimeUs(_outputSpan * 1000 - 1);
   _PID.SetOutputLimits(_outputMin, _outputMax);
   _PID.SetDerivativeMode(QuickPID::dMode::dOnError);
@@ -48,6 +45,13 @@ void RodActuator::Update() {
   }
   _lastPosition = _position;
   _lastAngvelocity = _angVelocity;
+  //if (!_next) {
+  //  _timer++;
+  //}
+  //if (_timer>_timeout) {
+  //  _next = true;
+  //  _timer = 0;
+  //}
 }
 
 void RodActuator::Stop() {
@@ -73,10 +77,11 @@ void RodActuator::AutoTune() {
   _tuner.SetEmergencyStop(positionLimit);
 }
 
-void RodActuator::Move(float* desiredPosition) {
+void RodActuator::Move(float desiredPosition) {
   _toMove = true;
   _next = false;
   _desiredPosition = desiredPosition;
+  //_PID.SetSetpoint(&desiredPosition);
 }
 
 float RodActuator::GetPosition() {
@@ -110,7 +115,7 @@ void RodActuator::SetSpeed(uint8_t speed) {
 // Private methods
 // =========================================
 bool RodActuator::isStable(float threshold=1) {
-  return abs(_position - *_desiredPosition) <= threshold;
+  return abs(_position - _desiredPosition) <= threshold;
 }
 
 void RodActuator::updateVelocity() {

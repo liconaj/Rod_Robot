@@ -17,7 +17,7 @@ public:
   void AutoTune();
   void SetPIDConstants(float Kp, float Ki, float Kd);
   void GetPIDConstants(float &Kp, float &Ki, float &Kd);
-  void Move(float* desiredPosition);
+  void Move(float desiredPosition);
   float GetPosition();
   void SetSpeed(uint8_t maxVelocity);
   void SetLeftLimit(float leftLimit);
@@ -37,15 +37,15 @@ private:
 
   float ticksRev = 7.0; // ticks in angPosition that makes a rev
   float gearRatio = 235.0;  // reducion gear of gearRatio:1
-  float R = 12.0;
+  float R = 13.0;
   float positionFactor;
 
   uint8_t _speed = 255;
-  int _moveTimeout = 100;
-  int _moveTimer = 0;
+  long _timeout = 1e12;
+  int _timer = 0;
   float _position = 0;  // Posición lineal actual
   float _lastPosition = 0;
-  float * _desiredPosition = 0; // Posición lineal deseada
+  float _desiredPosition = 0; // Posición lineal deseada
   float _lastAngvelocity = 0;
   float _angVelocity = 0; // Velocidad angular de los motores (interfaz para el PWM)
 

@@ -42,7 +42,7 @@ void cmdMoveActuator(SerialCommands* sender) {
       speed = value;
       continue;
     }
-    RodActuator *actuator = getActuatorByName(id);
+    RodActuator * actuator = getActuatorByName(id);
     actuator->Move(value);
   }
 
@@ -79,6 +79,14 @@ void cmdStartAutoTuning(SerialCommands* sender) {
     Serial.println(id);
     RodActuator* actuator = getActuatorByName(id);
     actuator->AutoTune();
+  }
+}
+
+void cmdStop(SerialCommands* sender) {
+  sendingCommand = true;
+  for (NamedActuator actuator : namedActuators)
+  {
+    actuator.object->Stop();
   }
 }
 
@@ -147,6 +155,7 @@ SerialCommand G1("G1", &cmdMoveActuator);
 
 // M-Code Definitions
 SerialCommand MHelp("M", &cmdGetMCodes);
+SerialCommand M00("M00", &cmdStop);
 SerialCommand M114("M114", &cmdGetActuatorPositions);
 SerialCommand M303("M303", &cmdStartAutoTuning);
 SerialCommand M301("M301", &cmdSetPIDConstants);

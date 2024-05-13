@@ -12,6 +12,7 @@ void addSerialCommands() {
   serialCommands.AddCommand(&G4);
 
   serialCommands.AddCommand(&MHelp);
+  serialCommands.AddCommand(&M00);
   serialCommands.AddCommand(&M114);
   serialCommands.AddCommand(&M303);
   serialCommands.AddCommand(&M301);
